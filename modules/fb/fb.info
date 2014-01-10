@@ -1,9 +1,0 @@
-name = DFF Facebook API
-description = Imports and uses the Facebook API.
-package = Drupal for Facebook
-
-; Information added by drupal.org packaging script on 2009-07-31
-version = "5.x-2.x-dev"
-project = "fb"
-datestamp = "1248999049"
-
