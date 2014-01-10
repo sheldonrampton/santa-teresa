@@ -1,0 +1,12 @@
+name = DFF Devel
+description = Blocks and messages that help when developing and debugging Apps.
+package = Drupal for Facebook
+dependencies = fb devel
+
+
+
+; Information added by drupal.org packaging script on 2009-07-31
+version = "5.x-2.x-dev"
+project = "fb"
+datestamp = "1248999049"
+

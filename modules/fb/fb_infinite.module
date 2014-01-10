@@ -1,0 +1,216 @@
+<?php
+  /**
+   * @file
+   * 
+   * This module manages an infinite session for each Facebook App.  
+   * http://wiki.developers.facebook.com/index.php/Infinite_session_keys
+   */
+
+  /**
+   * hook_fb.
+   */
+function fb_infinite_fb($op, $data, &$return) {
+  $fb = $data['fb'];
+  $fb_app = $data['fb_app'];
+
+  if ($op == FB_OP_GET_INFINITE_SESSION) {
+    // The fb module is asking for infinite session login information.
+    // This module knows it, so we provide it.
+    $fb_app_data = fb_app_get_data($fb_app);
+    $fb_infinite_data = $fb_app_data['fb_infinite'];
+    if ($fb_infinite_data['fbu'] && $fb_infinite_data['key'])
+      // Return array with FB id and apikey.
+      $return = array($fb_infinite_data['fbu'], $fb_infinite_data['key']);
+  }
+}
+
+/**
+ * hook_menu
+ */
+function fb_infinite_menu($may_cache) {
+  $items = array();
+  if ($may_cache) {
+    $items[] = array('path' => 'fb/infinite/display',
+                     'title' => t('Facebook session information'),
+                     'access' => TRUE,
+                     'callback' => 'fb_infinite_display_page',
+                     'type' => MENU_CALLBACK,
+    );
+  }
+  else {
+    if (arg(0) == 'node' && is_numeric(arg(1))) {
+      $node = node_load(arg(1));
+      if ($node->type == 'fb_app') {
+        // Only show if infinite session is configured.
+        $fb_app_data = fb_app_get_data($node->fb_app);
+        $fb_infinite_data = $fb_app_data['fb_infinite'];
+        if ($fb_infinite_data['key']) {
+          $items[] = array('path' => "node/$node->nid/fb/infinite/test",
+                           'title' => t('Infinite session test'),
+                           'type' => MENU_LOCAL_TASK,
+                           'access' => node_access('update', $node),
+                           'callback' => 'fb_infinite_test_page',
+                           'callback arguments' => array($node->nid),
+          );
+        }
+      }
+    }
+  }
+  return $items;
+}
+
+/**
+ * Implementation of hook_form_alter.
+ */
+function fb_infinite_form_alter($form_id, &$form) {
+  //drupal_set_message("fb_infinte_form_alter($form_id) " . dpr($form, 1));
+  
+  // Add our settings to the fb_app edit form.
+  if (is_array($form['fb_app_data'])) {
+    $node = $form['#node'];
+    $fb_app_data = fb_app_get_data($node->fb_app);
+    $fb_infinite_data = $fb_app_data['fb_infinite'];
+    
+    $form['fb_app_data']['fb_infinite'] = 
+      array('#type' => 'fieldset',
+            '#collapsible' => TRUE,
+            '#collapsed' => TRUE,
+            '#title' => t('Facebook infinite session settings'),
+            '#description' => t('An infinite session key is required to access the Facebook API from non-canvas pages.  For example, a cron job.'));
+    if (!$node->nid) {
+      // User must save apikey and secret before we can prompt for infinite session key.
+      $form['fb_app_data']['fb_infinite']['message'] =
+        array('#value' => '<p>'.t('Save your apikey and secret settings first.  Then return here to set up the infinite session.').'</p>');
+    }
+    else {
+      if ($node->fb_app->canvas) {
+        $form['fb_app_data']['fb_infinite']['help'] = array('#value' => t('<a href=!url target=_blank>Get your session key</a>.  If prompted to log in, be sure to check the box that prevents your session from expiring.', 
+                                                                          array('!url' => "http://apps.facebook.com/".$node->fb_app->canvas."/fb/infinite/display")),
+                                                            '#prefix' => '<p>',
+                                                            '#suffix' => '</p>');
+      }
+      else {
+        $form['fb_app_data']['fb_infinite']['help'] = array('#value' => t('Configure canvas pages for additional help generating an infinite session key.'),
+                                                            '#prefix' => '<p>',
+                                                            '#suffix' => '</p>');
+      }
+      
+      $form['fb_app_data']['fb_infinite']['fbu'] = 
+        array('#type' => textfield,
+              '#title' => t('Facebook User ID'),
+              '#default_value' => $fb_infinite_data['fbu'],
+        );
+      $form['fb_app_data']['fb_infinite']['key'] = 
+        array('#type' => textfield,
+              '#title' => t('Infinite Session Key'),
+              '#default_value' => $fb_infinite_data['key'],
+        );
+
+      /* so far, I can't get this to work.
+      $form['fb_app_data']['fb_infinite']['code'] =
+        array('#type' => textfield,
+              '#title' => t('One-time code'),
+              '#description' => t('Get a one-time code from facebook, <a href=!url target=_blank>here</a>.',
+                                  array('!url' => "http://www.facebook.com/code_gen.php?v=1.0&api_key=" . $node->fb_app->apikey)),
+        );
+      */
+    }
+  }
+}
+
+function fb_infinite_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  if ($node->type == 'fb_app') {
+    if ($op == 'submit') {
+      $fb_app_data = $node->fb_app_data;
+      $fb_infinite_data = $fb_app_data['fb_infinite'];
+
+      // This is an attempt to make the one-time code work.  I can't figure it out.
+      // http://forum.developers.facebook.com/viewtopic.php?pid=76361#p76361
+      if ($code = $fb_infinite_data['code']) {
+        drupal_set_message("code is $code");
+        $fb = fb_api_init($node->fb_app, FB_FBU_CURRENT); // Does not set user.
+        
+        $session = $fb->api_client->auth_getSession($code);
+        //dpm($session, "auth_getSession returned");
+      }
+    }
+  }
+}
+
+
+/**
+ * Menu callback.  Ensures the user is logged in and displays user id and
+ * session key.
+ */
+function fb_infinite_display_page() {
+  global $fb, $fb_app;
+
+  if (!$fb_app) {
+    drupal_set_message(t('This page must be viewed as a Facebook canvas page.'), 'error');
+    drupal_not_found();
+    exit();
+  }
+  
+  $fbu = $fb->require_login();
+  if ($fb->api_client->users_hasAppPermission('offline_access')) {
+    $output .= '<p>'.t('Facebook user id: %fbu',
+                       array('%fbu' => $fb->api_client->users_getLoggedInUser())). '</p>';
+    $output .= '<p>'.t('Facebook session key: %session',
+                       array('%session' => $fb->api_client->session_key)). '</p>';
+    $output .= '<p>'.t('Use the values above when configuring the infinite session of your Facebook App.').'</p>';
+  }
+  else {
+    $output .= '<p><fb:prompt-permission perms="offline_access">' . t('Click here for a session that will not expire.') . '</fb:prompt-permission></p>';
+    $output .= '<p>' . t('Refresh your browser after clicking the above link.') . '</p>';
+  }
+  return $output;
+}
+
+/**
+ * Menu callback to test infinite session values.
+ */
+function fb_infinite_test_page($nid) {
+  if ($GLOBALS['fb']) {
+    $url = $GLOBALS['fb_old_base_url'] . "?q=".$_GET['q'];
+    return t('Do not use this page from a canvas page.  Try !link.',
+             array('!link' => l($url, $url)));
+  }
+
+  $fb_app = fb_get_app(array('nid' => $nid));
+  $fb = fb_api_init($fb_app, FB_FBU_INFINITE_SESSION);
+  if ($fb) {
+    $fbu = $fb->api_client->users_getLoggedInUser();
+    if ($fbu) {
+      $info = $fb->api_client->users_getInfo(array($fbu), 
+                                             array('about_me',
+                                                   'affiliations',
+                                                   'name',
+                                                   'is_app_user',
+                                                   'pic_big',
+                                                   'profile_update_time',
+                                                   'status',
+                                             ));
+      $info = $info[0];
+      $fb_link = l($info['name'], 'http://www.facebook.com/profile.php', NULL, 'id='.$info['uid']);
+      
+      drupal_set_message(t('Infinite session key is working.'));
+      $output .= '<p>'.t('Facebook infinite session user: !user',
+                         array('!user' => $fb_link)) . '</p>';
+      $output .= '<p>'.t('This page cannot test that the session key will never expire.  If your cron jobs start to fail, return here to test the login again.').'</p>';
+      return $output;
+    }
+    else {
+      drupal_set_message(t('Infinite session key test failed.'), 'error');
+      // TODO: provide helpful hints of how to fix the problem.
+      $output .= '<p>'.t('Unable to log into Facebook using infinite session key.').'</p>';
+    }
+  }
+  else {
+    drupal_set_message(t('Infinite session key test failed.'), 'error');
+    $output .= '<p>'.t('Unable to log initialize Facebook API.').'</p>';
+  }
+    
+  return $output;
+}
+
+?>
