@@ -1,0 +1,16 @@
+name = PayPal donations
+description = This module creates PayPal donation blocks for your site and receives donation status information
+core = 7.x
+package = PayPal
+
+dependencies[] = entity
+dependencies[] = views
+dependencies[] = number
+dependencies[] = text
+
+; Information added by Drupal.org packaging script on 2013-12-24
+version = "7.x-1.01"
+core = "7.x"
+project = "paypal_donations"
+datestamp = "1387929205"
+

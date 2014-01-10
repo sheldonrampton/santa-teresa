@@ -1,11 +1,13 @@
-; $Id: locale.info,v 1.3 2006/11/21 20:55:34 dries Exp $
 name = Locale
-description = Enables the translation of the user interface to languages other than English.
-package = Core - optional
+description = Adds language handling functionality and enables the translation of the user interface to languages other than English.
+package = Core
 version = VERSION
+core = 7.x
+files[] = locale.test
+configure = admin/config/regional/language
 
-; Information added by drupal.org packaging script on 2008-01-10
-version = "5.6"
+; Information added by  packaging script on 2013-11-20
+version = "7.24"
 project = "drupal"
-datestamp = "1200003604"
+datestamp = "1384983240"
 
